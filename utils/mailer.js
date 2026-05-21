@@ -1,14 +1,37 @@
-const nodemailer = require("nodemailer");
+// Uses Brevo HTTP API instead of SMTP
+const https = require("https");
 
-const transporter = nodemailer.createTransport({
-  host:   process.env.SMTP_HOST,
-  port:   Number(process.env.SMTP_PORT) || 587,
-  secure: false,
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-  },
-});
+function brevoRequest(payload) {
+  return new Promise((resolve, reject) => {
+    const body = JSON.stringify(payload);
+    const options = {
+      hostname: "api.brevo.com",
+      path:     "/v3/smtp/email",
+      method:   "POST",
+      headers: {
+        "Content-Type":  "application/json",
+        "api-key":       process.env.BREVO_API_KEY,
+        "Content-Length": Buffer.byteLength(body),
+      },
+    };
+
+    const req = https.request(options, (res) => {
+      let data = "";
+      res.on("data", chunk => data += chunk);
+      res.on("end", () => {
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          resolve(data);
+        } else {
+          reject(new Error(`Brevo API error ${res.statusCode}: ${data}`));
+        }
+      });
+    });
+
+    req.on("error", reject);
+    req.write(body);
+    req.end();
+  });
+}
 
 // ── Order confirmation → customer ────────────────────────────
 async function sendOrderConfirmation(order) {
@@ -21,11 +44,11 @@ async function sendOrderConfirmation(order) {
       </tr>`)
     .join("");
 
-  await transporter.sendMail({
-    from:    `"Sisimwo Estate" <${process.env.SMTP_USER}>`,
-    to:      order.customerEmail,
+  await brevoRequest({
+    sender:  { name: "Sisimwo Estate", email: process.env.SMTP_USER },
+    to:      [{ email: order.customerEmail, name: order.customerName }],
     subject: `Your Sisimwo Estate Order – #${order._id}`,
-    html: `
+    htmlContent: `
       <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;">
         <div style="background:#1E4228;padding:24px 32px;">
           <h1 style="color:#fff;margin:0;font-size:22px;font-weight:400;">Sisimwo Estate</h1>
@@ -60,11 +83,11 @@ async function sendOrderConfirmation(order) {
 async function sendAdminOrderAlert(order) {
   const itemSummary = order.items.map(i => `${i.name} × ${i.qty}`).join(", ");
 
-  await transporter.sendMail({
-    from:    `"Sisimwo Estate" <${process.env.SMTP_USER}>`,
-    to:      process.env.ADMIN_EMAIL,
-    subject: `🛒 New Order – KSh ${order.total.toLocaleString()} from ${order.customerName}`,
-    html: `
+  await brevoRequest({
+    sender:  { name: "Sisimwo Estate", email: process.env.SMTP_USER },
+    to:      [{ email: process.env.ADMIN_EMAIL }],
+    subject: `New Order – KSh ${order.total.toLocaleString()} from ${order.customerName}`,
+    htmlContent: `
       <div style="font-family:Arial,sans-serif;">
         <h3 style="color:#1E4228;">New order received</h3>
         <p><strong>Customer:</strong> ${order.customerName}</p>
@@ -79,11 +102,11 @@ async function sendAdminOrderAlert(order) {
 
 // ── New comment alert → admin ─────────────────────────────────
 async function sendCommentNotification(comment) {
-  await transporter.sendMail({
-    from:    `"Sisimwo Estate" <${process.env.SMTP_USER}>`,
-    to:      process.env.ADMIN_EMAIL,
-    subject: `💬 New Review from ${comment.name}`,
-    html: `
+  await brevoRequest({
+    sender:  { name: "Sisimwo Estate", email: process.env.SMTP_USER },
+    to:      [{ email: process.env.ADMIN_EMAIL }],
+    subject: `New Review from ${comment.name}`,
+    htmlContent: `
       <div style="font-family:Arial,sans-serif;">
         <h3 style="color:#1E4228;">New review posted on the website</h3>
         <p><strong>From:</strong> ${comment.name}</p>
