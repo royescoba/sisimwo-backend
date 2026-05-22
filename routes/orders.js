@@ -28,10 +28,11 @@ router.post("/", async (req, res) => {
     });
 
     // Fire both emails concurrently; don't block the response if email fails
-    Promise.all([
-      sendOrderConfirmation(order),
-      sendAdminOrderAlert(order),
-    ]).catch(err => console.error("Order email error:", err.message));
+   Promise.all([
+    sendOrderConfirmation(order),
+    sendAdminOrderAlert(order),
+    ]).then(() => console.log("Emails sent successfully"))
+  .catch(err => console.error("Order email error:", err.message));
 
     res.status(201).json({
       message: "Order placed successfully.",
